@@ -1,13 +1,5 @@
-## [project-title] Changelog
+# Self-Hosted Kubernetes on VMSS Flex Changelog
 
-<a name="x.y.z"></a>
-# x.y.z (yyyy-mm-dd)
+## Initial publication
 
-*Features*
-* ...
-
-*Bug Fixes*
-* ...
-
-*Breaking Changes*
-* ...
+- Add self-hosted Kubernetes on VMSS Flex guide set.
