@@ -427,3 +427,18 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# K8s-on-VMSS-Flex specific
+.deploy/
+*.bak
+.deploy2/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+terraform.tfvars
+tfplan
+crash.log
+crash.*.log

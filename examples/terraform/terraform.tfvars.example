@@ -1,0 +1,13 @@
+# Required
+ssh_public_key_path = "~/.ssh/k8s_vmss.pub"
+
+# Optional overrides
+# resource_group_name         = "rg-k8s-vmss-flex"
+# location                    = "northeurope"
+# cluster_name                = "k8s-vmss-flex"
+# controlplane_vm_size        = "Standard_D4s_v5"
+# worker_vm_size              = "Standard_D8s_v5"
+# controlplane_instance_count = 3
+# worker_instance_count       = 3
+# k8s_version                 = "1.29.3"
+# ssh_source_address_prefix   = "1.2.3.4/32"    # tighten in production
