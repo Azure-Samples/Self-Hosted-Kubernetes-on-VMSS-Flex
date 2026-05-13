@@ -65,7 +65,6 @@ export SSH_KEY_PATH="$HOME/.ssh/k8s_vmss.pub"
 >   export CONTROL_VM_SIZE="Standard_D2s_v6"   # 2 vCPU x 3 = 6
 >   export WORKER_VM_SIZE="Standard_D4s_v6"    # 4 vCPU x 3 = 12  → 18 total
 >   ```
->   This matches the "Small prod cluster" profile in [cost concepts](../concepts/cost.md).
 >
 > - **Or** request a quota increase: `az vm list-usage -l <region>` shows current limits; portal → Subscriptions → Usage + quotas → request more.
 >

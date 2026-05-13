@@ -14,8 +14,6 @@ For platform teams who need control beyond what [Azure Kubernetes Service (AKS)]
 - **A validation suite** that runs 11 tests (13 assertions): node Ready, etcd quorum, pod-to-pod networking, Service routing, DNS, NodePort reachability, leader election, and apiserver reachability
 - **Three deployment paths**: bash CLI, PowerShell, or Terraform
 
-Default Azure spend: **~$2/hr / ~$1,430/month** in `northeurope`. See [cost concepts](docs/concepts/cost.md) for cost-reduction levers (Spot workers ~70% off, scheduled deallocation, right-sizing).
-
 ---
 
 ## Quick start
@@ -45,7 +43,6 @@ All three deploy the same infrastructure shape (see [architecture concepts](docs
 - [Scaling and lifecycle](docs/concepts/scaling-and-lifecycle.md) — day-2 operations, upgrades, replacements, Spot evictions
 - [Storage](docs/concepts/storage.md) — what's there by default, adding Azure Disk/Files CSI
 - [Security and identity](docs/concepts/security-and-identity.md) — hardening checklist, what the defaults expose
-- [Cost](docs/concepts/cost.md) — monthly budget by sizing profile, how to reduce
 - [How VMSS powers self-hosted Kubernetes](docs/concepts/vmss-for-kubernetes.md) — Flex orchestration, IMDS, Cluster Autoscaler integration
 
 ### Quickstart
@@ -110,7 +107,6 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 │   │   ├── scaling-and-lifecycle.md       # day-2 operations
 │   │   ├── storage.md                     # disks, PVCs, CSI drivers
 │   │   ├── security-and-identity.md       # hardening checklist
-│   │   ├── cost.md                        # monthly budget + reductions
 │   │   └── vmss-for-kubernetes.md         # Flex orchestration internals
 │   ├── quickstart/
 │   │   ├── deploy-kubeadm-vmss.md             # bash, the main tested path
