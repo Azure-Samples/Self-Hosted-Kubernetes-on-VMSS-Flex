@@ -49,9 +49,9 @@ VMSS supports two orchestration modes:
 | Ultra Disk support | ✅ | ❌ |
 | Max instances per VMSS | 1,000 | 1,000 |
 | Azure Cluster Autoscaler support | ✅ | ✅ |
-| Recommended for K8s | ✅ **Yes** | ⚠️ Legacy |
+| Per-instance lifecycle (start/stop/delete individual VMs) | ✅ | ❌ |
 
-**Use Flexible orchestration for all new Kubernetes deployments.** Uniform orchestration is a legacy mode. Flexible mode gives you standard VM semantics, easier debugging, and better feature parity with newer Azure VM capabilities.
+**This sample uses Flexible orchestration.** Flex gives you standard VM semantics (each instance is a `Microsoft.Compute/virtualMachines` resource), per-instance lifecycle, the ability to mix VM sizes and Spot + on-demand within a single pool, and broader feature parity with the newest Azure VM capabilities. Uniform orchestration is fully supported on Azure and works for Kubernetes as well — it's a good fit when you want predictable instance indexing or are continuing an existing pattern. For new self-hosted Kubernetes deployments where you want maximum flexibility, Flex is the mode this guide demonstrates.
 
 To create a VMSS with Flexible orchestration:
 
