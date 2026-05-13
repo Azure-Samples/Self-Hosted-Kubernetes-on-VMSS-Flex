@@ -1,0 +1,100 @@
+#cloud-config
+# Bootstrap a Kubernetes node (control plane or worker).
+# Installs containerd, kubeadm, kubelet, kubectl, and configures Azure SLB
+# hairpin workaround at first boot.
+# Customer still needs to run `kubeadm init` (on CP1) and `kubeadm join` (on the rest).
+
+write_files:
+  - path: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+  - path: /etc/sysctl.d/k8s.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+  - path: /usr/local/sbin/k8s-bootstrap.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # Consolidated K8s node bootstrap. Runs once at first boot under cloud-init.
+      # Use a single script (set -e + dpkg-lock wait) instead of cloud-init's
+      # runcmd list, because:
+      #   1. Ubuntu's unattended-upgrades runs in parallel at first boot and
+      #      contends for the dpkg lock — multiple short apt commands fail.
+      #   2. cloud-init's runcmd does NOT fail-fast; a failed line still lets
+      #      the marker file be created downstream.
+      set -euo pipefail
+
+      K8S_MINOR="${K8S_MINOR}"
+      K8S_PATCH="${K8S_PATCH}"
+
+      log() { echo "[k8s-bootstrap] $1"; }
+
+      # apt with built-in lock wait (10 min) handles Ubuntu's unattended-upgrades
+      # which holds /var/lib/dpkg/lock-frontend at first boot.
+      APT="apt-get -o DPkg::Lock::Timeout=600"
+
+      # NOTE: The Azure SLB hairpin iptables NAT rule is NOT added here.
+      # On CP nodes the rule must only be active AFTER the local kube-apiserver
+      # static pod is healthy (otherwise CP-join preflight checks redirect to a
+      # not-yet-listening localhost:6443 and fail with "connection refused").
+      # On workers the rule must NEVER be added — workers are not in the LB
+      # backend pool and need to reach the LB normally.
+      # The kubeadm-init.sh / join-cp.sh scripts in the quickstart add the rule
+      # at the correct point in the bootstrap.
+
+      # 1. Disable swap (kubelet requirement)
+      swapoff -a || true
+      sed -i '/ swap / s/^/#/' /etc/fstab || true
+
+      # 2. Kernel modules + sysctl
+      modprobe overlay
+      modprobe br_netfilter
+      sysctl --system >/dev/null
+
+      # 3. Install containerd + iptables-persistent + everything else in a single apt call
+      export DEBIAN_FRONTEND=noninteractive
+      log "apt-get update"
+      $APT update -qq
+      log "Installing base packages (containerd, iptables-persistent, etc.)"
+      $APT install -y -qq \
+        containerd iptables-persistent apt-transport-https ca-certificates curl gpg
+
+      # 4. Containerd configuration
+      mkdir -p /etc/containerd
+      containerd config default > /etc/containerd/config.toml
+      sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+      systemctl restart containerd
+      systemctl enable containerd
+
+      # 5. Kubernetes apt repo + install pinned kubelet/kubeadm/kubectl
+      mkdir -p /etc/apt/keyrings
+      if [ ! -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg ]; then
+        curl -fsSL "https://pkgs.k8s.io/core:/stable:/v$K8S_MINOR/deb/Release.key" | \
+          gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      fi
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v$K8S_MINOR/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+      log "apt-get update (k8s repo)"
+      $APT update -qq
+      log "Installing kubelet, kubeadm, kubectl $K8S_PATCH"
+      $APT install -y -qq \
+        kubelet=$K8S_PATCH-1.1 \
+        kubeadm=$K8S_PATCH-1.1 \
+        kubectl=$K8S_PATCH-1.1
+      apt-mark hold kubelet kubeadm kubectl
+
+      # 6. Sanity check: kubeadm must be on PATH before we create the marker
+      command -v kubeadm >/dev/null || {
+        log "kubeadm not found after install"
+        exit 1
+      }
+
+      # 7. Marker only after everything above succeeded
+      touch /var/lib/cloud-init-k8s-bootstrap-done
+      log "Bootstrap complete"
+
+runcmd:
+  - [/usr/local/sbin/k8s-bootstrap.sh]
+
