@@ -2,8 +2,6 @@
 
 > A reference sample for deploying a production-shaped, self-managed Kubernetes 1.29 cluster on Azure Virtual Machine Scale Sets (VMSS) using **Flexible orchestration mode** for both control plane and worker pools.
 
-For platform teams who need control beyond what [Azure Kubernetes Service (AKS)](https://learn.microsoft.com/azure/aks/) provides. **If AKS fits your needs, use it.** This sample exists for the specific cases where it doesn't — see [When to use this](docs/concepts/when-to-use-this.md) for the honest decision guide.
-
 ---
 
 ## What you get
@@ -34,12 +32,10 @@ All three deploy the same infrastructure shape (see [architecture concepts](docs
 
 ## Documentation map
 
-> 📝 **Validation status:** The bash quickstart, the Terraform module, all 8 concept docs, and the validation suite have been **end-to-end tested** against a live Azure deployment (13/13 validation tests passed, May 2026). The how-to / reference / troubleshooting docs are **reviewed for accuracy but not individually deploy-tested** — they cover day-2 ops (autoscaler, spot, GPU, upgrades, topology) where the test matrix would require additional infrastructure (GPU quota, multi-day uptime, etc.).
-
 ### Concepts (read these first)
 - [Architecture](docs/concepts/architecture.md) — what gets deployed, why, and how it fails gracefully
 - [Networking](docs/concepts/networking.md) — **read this for the Azure SLB hairpin gotcha**, NSG rules, Calico VXLAN
-- [When to use this sample](docs/concepts/when-to-use-this.md) — vs AKS, CAPZ, or other alternatives
+- [What this sample deploys](docs/concepts/when-to-use-this.md) — what you get, what you own after deploy
 - [Scaling and lifecycle](docs/concepts/scaling-and-lifecycle.md) — day-2 operations, upgrades, replacements, Spot evictions
 - [Storage](docs/concepts/storage.md) — what's there by default, adding Azure Disk/Files CSI
 - [Security and identity](docs/concepts/security-and-identity.md) — hardening checklist, what the defaults expose
@@ -103,7 +99,7 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 │   ├── concepts/
 │   │   ├── architecture.md                # what gets deployed
 │   │   ├── networking.md                  # NSG, Calico, Azure SLB hairpin
-│   │   ├── when-to-use-this.md            # vs AKS / CAPZ decision guide
+│   │   ├── when-to-use-this.md            # what this sample deploys + what you own
 │   │   ├── scaling-and-lifecycle.md       # day-2 operations
 │   │   ├── storage.md                     # disks, PVCs, CSI drivers
 │   │   ├── security-and-identity.md       # hardening checklist
