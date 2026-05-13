@@ -36,6 +36,8 @@ All three deploy the same infrastructure shape (see [architecture concepts](docs
 
 ## Documentation map
 
+> 📝 **Validation status:** The bash quickstart, the Terraform module, all 8 concept docs, and the validation suite have been **end-to-end tested** against a live Azure deployment (13/13 validation tests passed, May 2026). The how-to / reference / troubleshooting docs are **reviewed for accuracy but not individually deploy-tested** — they cover day-2 ops (autoscaler, spot, GPU, upgrades, topology) where the test matrix would require additional infrastructure (GPU quota, multi-day uptime, etc.).
+
 ### Concepts (read these first)
 - [Architecture](docs/concepts/architecture.md) — what gets deployed, why, and how it fails gracefully
 - [Networking](docs/concepts/networking.md) — **read this for the Azure SLB hairpin gotcha**, NSG rules, Calico VXLAN

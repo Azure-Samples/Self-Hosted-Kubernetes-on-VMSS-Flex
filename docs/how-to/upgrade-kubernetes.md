@@ -56,7 +56,23 @@ scp azureuser@<cp1-ip>:/var/lib/etcd/snapshot-*.db ./etcd-backup/
 
 ## Step 2: Upgrade the First Control Plane Node
 
-SSH into `vm-controlplane-01`.
+First, enumerate the actual CP instance names (Flex VMSS produces stamped names like `vmss-k8s-controlplane_4fc08081`):
+
+```bash
+CP_NAMES=($(az vm list -g $RESOURCE_GROUP \
+  --query "[?contains(name,'controlplane')].name" -o tsv | sort))
+CP1=${CP_NAMES[0]}
+CP2=${CP_NAMES[1]}
+CP3=${CP_NAMES[2]}
+echo "CP1=$CP1, CP2=$CP2, CP3=$CP3"
+```
+
+Get `$CP1`'s public IP and SSH in:
+
+```bash
+CP1_IP=$(az vm show -g $RESOURCE_GROUP -n $CP1 -d --query publicIps -o tsv)
+ssh -i ~/.ssh/k8s_vmss azureuser@$CP1_IP
+```
 
 ```bash
 # Determine available upgrade versions
@@ -87,22 +103,23 @@ Verify from your local machine:
 
 ```bash
 kubectl get nodes
-# vm-controlplane-01 should show v1.30.1
-# Other nodes will still show previous version — this is expected
+# $CP1's node should show v1.30.1
+# Other nodes still show the old version — expected, we upgrade them next
 ```
 
 ---
 
 ## Step 3: Upgrade Remaining Control Plane Nodes
 
-For `vm-controlplane-02` and `vm-controlplane-03`, the process is slightly different — use `upgrade node` instead of `upgrade apply`:
+For `$CP2` and `$CP3`, the process is slightly different — use `upgrade node` instead of `upgrade apply`:
 
 ```bash
-# Cordon from local machine
-kubectl cordon vm-controlplane-02
+# From your local workstation
+kubectl cordon $CP2
 
-# SSH into vm-controlplane-02
-sudo apt-mark unhold kubeadm kubelet kubectl
+# SSH into $CP2
+CP2_IP=$(az vm show -g $RESOURCE_GROUP -n $CP2 -d --query publicIps -o tsv)
+ssh -i ~/.ssh/k8s_vmss azureuser@$CP2_IP
 sudo apt-get update
 sudo apt-get install -y kubeadm=1.30.1-1.1
 
@@ -115,10 +132,10 @@ sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 
 # Uncordon from local machine
-kubectl uncordon vm-controlplane-02
+kubectl uncordon $CP2
 ```
 
-Repeat for `vm-controlplane-03`.
+Repeat for `$CP3`.
 
 Verify all control plane nodes are on the new version:
 
@@ -196,23 +213,15 @@ az vmss update \
 ### Roll instances one at a time
 
 ```bash
-# Get all instance IDs
-INSTANCE_IDS=$(az vmss list-instances \
+# Get all instance IDs from the VMSS
+mapfile -t INSTANCES < <(az vmss list-instances \
   --resource-group $RESOURCE_GROUP \
   --name vmss-k8s-workers \
-  --query "[].instanceId" -o tsv)
+  --query "[].{id:instanceId, name:osProfile.computerName}" -o tsv)
 
-for INSTANCE_ID in $INSTANCE_IDS; do
-  # Get the node name for this instance
-  INSTANCE_NAME=$(az vmss get-instance-view \
-    --resource-group $RESOURCE_GROUP \
-    --name vmss-k8s-workers \
-    --instance-id $INSTANCE_ID \
-    --query computerName -o tsv 2>/dev/null || \
-    az vmss list-instances \
-      --resource-group $RESOURCE_GROUP \
-      --name vmss-k8s-workers \
-      --query "[?instanceId=='$INSTANCE_ID'].osProfile.computerName" -o tsv)
+for line in "${INSTANCES[@]}"; do
+  INSTANCE_ID=$(echo "$line" | cut -f1)
+  INSTANCE_NAME=$(echo "$line" | cut -f2)
 
   echo "Processing instance $INSTANCE_ID ($INSTANCE_NAME)..."
 
@@ -282,12 +291,18 @@ sudo mv /var/lib/etcd /var/lib/etcd.bak
 sudo mkdir -p /var/lib/etcd
 
 ETCD_VERSION="v3.5.10"
+# Run this on EACH CP node, substituting the local hostname/IP. Get the actual
+# node names from `kubectl get nodes -l node-role.kubernetes.io/control-plane`.
+THIS_NODE=$(hostname)              # the kubelet's view of this node
+THIS_IP=$(hostname -I | awk '{print $1}')
+INITIAL_CLUSTER="<cp1-name>=https://<cp1-ip>:2380,<cp2-name>=https://<cp2-ip>:2380,<cp3-name>=https://<cp3-ip>:2380"
+
 sudo ETCDCTL_API=3 etcdctl snapshot restore /path/to/snapshot.db \
   --data-dir=/var/lib/etcd \
-  --name=vm-controlplane-01 \
-  --initial-cluster="vm-controlplane-01=https://<cp1-ip>:2380,vm-controlplane-02=https://<cp2-ip>:2380,vm-controlplane-03=https://<cp3-ip>:2380" \
+  --name=$THIS_NODE \
+  --initial-cluster="$INITIAL_CLUSTER" \
   --initial-cluster-token=etcd-cluster \
-  --initial-advertise-peer-urls=https://<this-node-ip>:2380
+  --initial-advertise-peer-urls=https://$THIS_IP:2380
 
 sudo chown -R etcd:etcd /var/lib/etcd
 sudo systemctl start kubelet

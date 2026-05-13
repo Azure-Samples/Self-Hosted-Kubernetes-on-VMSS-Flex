@@ -83,11 +83,12 @@ az vmss create \
   --os-disk-size-gb 128 \
   --storage-sku Premium_LRS \
   --tags \
-    "k8s.io/cluster-autoscaler/enabled=true" \
-    "k8s.io/cluster-autoscaler/$CLUSTER_NAME=owned" \
-    "kubernetes.io/cluster/$CLUSTER_NAME=owned" \
+    "role=worker-spot" \
+    "cluster=$CLUSTER_NAME" \
     "spot=true"
 ```
+
+> ⚠️ **Do not use `k8s.io/cluster-autoscaler/*` Azure tags.** Azure rejects tag names containing `/` as `InvalidTagNameCharacters`. The Cluster Autoscaler on Azure does not use those tags — it discovers VMSS via the `--nodes=min:max:VMSS_NAME` flag on the CA Deployment. See [configure-cluster-autoscaler.md](configure-cluster-autoscaler.md) and [vmss-for-kubernetes.md — Cluster Autoscaler Integration](../concepts/vmss-for-kubernetes.md#how-the-cluster-autoscaler-integrates-with-vmss).
 
 > **Note:** `--eviction-policy Delete` is required for Spot VMs in VMSS. `Deallocate` is not supported for Spot.
 > `--max-price -1` means "pay up to the on-demand price" (recommended — avoids unnecessary evictions from price spikes).
@@ -162,17 +163,24 @@ spec:
       priorityClassName: system-node-critical
       containers:
         - name: handler
-          image: python:3.11-slim
+          # bitnami/kubectl is Debian-based and ships kubectl on PATH; we install
+          # Python alongside for the IMDS poll. Alternative: use the official
+          # cloud-provider-azure node-termination-handler upstream chart.
+          image: bitnami/kubectl:1.29
           command:
-            - python3
+            - bash
             - -c
             - |
+              set -e
+              # Install Python (~5s on first start)
+              apt-get update -qq && apt-get install -y -qq python3
+              cat > /tmp/handler.py <<'PY'
               import json, os, subprocess, time, urllib.request
-              
+
               NODE_NAME = os.environ.get("NODE_NAME", "")
               IMDS_URL = "http://169.254.169.254/metadata/scheduledevents?api-version=2020-07-01"
               POLL_INTERVAL = 5  # seconds
-              
+
               def get_scheduled_events():
                   req = urllib.request.Request(IMDS_URL, headers={"Metadata": "true"})
                   try:
@@ -181,7 +189,7 @@ spec:
                   except Exception as e:
                       print(f"IMDS poll failed: {e}")
                       return {"Events": []}
-              
+
               def drain_node(node_name):
                   print(f"Eviction detected for {node_name}. Cordoning...")
                   subprocess.run(["kubectl", "cordon", node_name], check=False)
@@ -195,7 +203,7 @@ spec:
                       "--timeout=25s"
                   ], check=False)
                   print("Drain complete.")
-              
+
               print(f"Spot interruption handler started. Watching node: {NODE_NAME}")
               while True:
                   events = get_scheduled_events()
@@ -206,6 +214,8 @@ spec:
                               drain_node(NODE_NAME)
                               time.sleep(60)  # avoid re-triggering
                   time.sleep(POLL_INTERVAL)
+              PY
+              python3 /tmp/handler.py
           env:
             - name: NODE_NAME
               valueFrom:

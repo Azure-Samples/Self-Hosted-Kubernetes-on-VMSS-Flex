@@ -10,7 +10,27 @@ This guide covers the most common issues encountered when running self-hosted Ku
 
 `kubeadm join` hangs or returns an error. New VMSS instances start but never appear in `kubectl get nodes`.
 
-### Root Cause A: ProviderID Format Mismatch
+### Root Cause A: Azure Standard LB hairpin (the most common cause on this sample)
+
+If your control-plane endpoint is an Azure Standard LB public IP, every CP node lands in the LB's backend pool. Azure SLB has a **hairpin restriction**: a backend VM cannot reach the LB's frontend IP from itself. kubeadm's preflight `cluster-info` check goes through `https://<LB_IP>:6443` and times out with `connection refused`. Same thing breaks `kubeadm init`'s `wait-control-plane` phase on CP1.
+
+**Fix:** install an iptables NAT redirect on every CP node that rewrites outgoing traffic for `<LB_IP>:6443` to `127.0.0.1:6443`. The bash quickstart does this in [Step 8](../quickstart/deploy-kubeadm-vmss.md#step-8-initialize-the-first-control-plane-node) and [Step 10](../quickstart/deploy-kubeadm-vmss.md#step-10-join-the-remaining-control-plane-nodes).
+
+Quick verify:
+
+```bash
+# On each CP node, this should show the rule
+sudo iptables -t nat -L OUTPUT -n -v | grep DNAT
+
+# From a CP, this should hit the LOCAL apiserver via the NAT redirect
+curl -sk --max-time 5 -w "HTTP %{http_code}\n" -o /dev/null \
+  https://<LB_IP>:6443/livez
+# Expected: HTTP 200
+```
+
+**`/etc/hosts` mapping is NOT sufficient** — kubeconfig stores the literal IP, and Linux skips hostname resolution for IP literals. iptables NAT works for both hostnames and IP literals. See [networking concepts](../concepts/networking.md#azure-standard-lb-hairpin-the-single-biggest-gotcha) for the full explanation.
+
+### Root Cause B: ProviderID Format Mismatch
 
 The Azure cloud provider expects a specific `ProviderID` format. If the cloud provider config does not match the actual VMSS orchestration mode, node registration fails.
 
@@ -33,7 +53,7 @@ sudo systemctl restart kubelet
 kubectl describe node <node-name> | grep ProviderID
 ```
 
-### Root Cause B: NSG Rules Blocking kubelet Port
+### Root Cause C: NSG Rules Blocking kubelet Port
 
 The API server must reach the kubelet (port 10250) on worker nodes for log streaming and exec.
 
@@ -58,7 +78,7 @@ az network nsg rule create \
   --access Allow
 ```
 
-### Root Cause C: DNS Resolution Failure for API Server
+### Root Cause D: DNS Resolution Failure for API Server
 
 **Fix:**
 
@@ -86,15 +106,32 @@ Pods remain in `Pending` state. CA logs show no scale-up events.
 
 **Fix:**
 
-1. Verify VMSS tags:
+1. Verify CA discovery configuration:
+
+   Two valid patterns; pick whichever your CA Deployment uses.
+
+   **Pattern A (recommended): explicit `--nodes` flag**
+
+   ```bash
+   kubectl -n kube-system get deployment cluster-autoscaler -o yaml \
+     | grep -A1 -- '--nodes='
+   # Should show one line per VMSS pool, e.g.:
+   #   - --nodes=1:10:vmss-k8s-workers
+   ```
+
+   **Pattern B: tag-based auto-discovery**
+
    ```bash
    az vmss show \
      --resource-group $RESOURCE_GROUP \
      --name vmss-k8s-workers \
      --query tags
-   # Must include k8s.io/cluster-autoscaler/enabled=true
-   # and k8s.io/cluster-autoscaler/<cluster-name>=owned
+   # Look for the Azure-safe tag your CA Deployment references via
+   # --node-group-auto-discovery=label:<key>=<value>
+   # (e.g. cluster-autoscaler-enabled=true)
    ```
+
+   > ⚠️ **Do NOT use** `k8s.io/cluster-autoscaler/*` Azure tags. Azure rejects tag names containing `/`. The Azure cloud provider doesn't read those tags. See [vmss-for-kubernetes.md](../concepts/vmss-for-kubernetes.md#how-the-cluster-autoscaler-integrates-with-vmss).
 
 2. Check CA logs for "no node group found":
    ```bash

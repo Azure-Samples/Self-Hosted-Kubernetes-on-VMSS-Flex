@@ -58,6 +58,34 @@ Add custom topology labels for InfiniBand and Proximity Placement Groups using a
 
 ```bash
 cat <<'EOF' | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: topology-labeler
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: topology-labeler
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: topology-labeler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: topology-labeler
+subjects:
+  - kind: ServiceAccount
+    name: topology-labeler
+    namespace: kube-system
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -72,6 +100,7 @@ spec:
       labels:
         app: topology-labeler
     spec:
+      serviceAccountName: topology-labeler
       hostNetwork: true
       tolerations:
         - operator: Exists

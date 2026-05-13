@@ -137,39 +137,56 @@ Scheduled Events endpoint: `http://169.254.169.254/metadata/scheduledevents?api-
 
 ## VMSS Tags Used by Cluster Autoscaler
 
-### Required Discovery Tags
+> ⚠️ **Azure does NOT use the AWS-style `k8s.io/cluster-autoscaler/*` tag scheme.** Azure rejects tag names containing `/` as `InvalidTagNameCharacters`. Some unofficial guides still recommend those tags — they will fail at VMSS creation time.
+
+### Discovery options for the Azure Cluster Autoscaler
+
+The Azure Cluster Autoscaler (cloud-provider-azure) has two ways to discover VMSS node groups:
+
+| Method | How | When to use |
+|---|---|---|
+| **Explicit `--nodes` flag** (recommended) | `--nodes=<min>:<max>:<vmss-name>` repeated per VMSS, on the CA Deployment | Single cluster, few VMSS pools — simplest setup |
+| **Tag-based auto-discovery** | `--node-group-auto-discovery=label:<key>=<value>` plus a matching Azure-safe tag on each VMSS | Many VMSS pools, automatic discovery of new pools |
+
+For auto-discovery, set Azure-safe tags on the VMSS (no `/` in keys, no reserved characters in values):
 
 | Tag Key | Value | Purpose |
 |---|---|---|
-| `k8s.io/cluster-autoscaler/enabled` | `"true"` | Enable CA discovery |
-| `k8s.io/cluster-autoscaler/<cluster-name>` | `"owned"` | Cluster ownership |
-| `kubernetes.io/cluster/<cluster-name>` | `"owned"` | Cloud provider cluster membership |
+| `cluster-autoscaler-enabled` | `"true"` | CA discovery (with matching `--node-group-auto-discovery=label:cluster-autoscaler-enabled=true`) |
+| `cluster-autoscaler-cluster` | `<cluster-name>` | Identify which cluster owns this VMSS |
 
-### Optional Resource Hint Tags
+### Optional resource-hint tags
 
-These allow CA to predict what a new node will look like without having to query the VM for capacity:
+For scale-from-zero, CA needs to know what a new node will provide before any instance exists. Azure-safe key naming:
 
 | Tag Key | Value | Purpose |
 |---|---|---|
-| `k8s.io/cluster-autoscaler/node-template/resources/cpu` | `"8"` | vCPU count hint |
-| `k8s.io/cluster-autoscaler/node-template/resources/memory` | `"32Gi"` | Memory hint |
-| `k8s.io/cluster-autoscaler/node-template/resources/nvidia.com/gpu` | `"4"` | GPU count hint |
-| `k8s.io/cluster-autoscaler/node-template/label/accelerator` | `"nvidia"` | Node label hint |
-| `k8s.io/cluster-autoscaler/node-template/taint/nvidia.com/gpu` | `"present:NoSchedule"` | Taint hint |
+| `cluster-autoscaler-cpu` | `"8"` | vCPU count hint |
+| `cluster-autoscaler-memory` | `"32Gi"` | Memory hint |
+| `cluster-autoscaler-gpu` | `"4"` | GPU count hint |
+
+The CA reads these via the cloud-provider-azure plugin's tag normalization. Verify your CA version supports the tag keys you set — see [the official docs](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/azure/README.md).
 
 ---
 
 ## Supported VM SKUs for Kubernetes Worker Nodes
 
+> 📝 **Hypervisor generation matters.** v5 SKUs support both Gen1 and Gen2 images (`Ubuntu2204` alias is Gen1; `22_04-lts-gen2` is Gen2). v6 SKUs are **Gen2-only**. If you see `BadRequest: VM size 'Standard_D*s_v6' cannot boot Hypervisor Generation '1'`, switch the image SKU to `22_04-lts-gen2`.
+
 ### General Purpose (Recommended for most workloads)
 
-| SKU | vCPUs | RAM | Notes |
-|---|---|---|---|
-| Standard_D4s_v5 | 4 | 16 GiB | Control plane, light workers |
-| Standard_D8s_v5 | 8 | 32 GiB | Standard worker nodes |
-| Standard_D16s_v5 | 16 | 64 GiB | Heavier workloads |
-| Standard_D32s_v5 | 32 | 128 GiB | Large pod capacity |
-| Standard_D48s_v5 | 48 | 192 GiB | Large pod capacity |
+| SKU | vCPUs | RAM | Hypervisor | Notes |
+|---|---|---|---|---|
+| Standard_D2s_v6 | 2 | 8 GiB | Gen2 | Smallest CP node — fits 20-vCPU MSDN/VS Enterprise quota |
+| Standard_D4s_v6 | 4 | 16 GiB | Gen2 | Smallest dev/test worker |
+| Standard_D2s_v5 | 2 | 8 GiB | Gen1+Gen2 | Smallest CP node, where v5 SKU is available |
+| Standard_D4s_v5 | 4 | 16 GiB | Gen1+Gen2 | Control plane (default for the quickstart), light workers |
+| Standard_D8s_v5 | 8 | 32 GiB | Gen1+Gen2 | Standard worker (default for the quickstart) |
+| Standard_D16s_v5 | 16 | 64 GiB | Gen1+Gen2 | Heavier workloads |
+| Standard_D32s_v5 | 32 | 128 GiB | Gen1+Gen2 | Large pod capacity |
+| Standard_D48s_v5 | 48 | 192 GiB | Gen1+Gen2 | Large pod capacity |
+
+> Capacity availability varies by region. If `az vmss create` returns `SkuNotAvailable`, try a different region or switch v5↔v6.
 
 ### Memory Optimized
 
